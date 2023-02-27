@@ -41,7 +41,7 @@ The NHANES dataset from 1999-2004 is first imported and restricted to the list o
 * Phys Active
 * Smoke100
 
-The data set is then cleaned using the `clean_names` function and summarised using the `skim` function. Missing variables were omitted using the `na.omit` function.
+The data set is then cleaned using the `clean_names` function and summarised using the `skim` function. Missing variables were omitted using the `na.omit` function. The reference input for the outcome variable `diabetes` is changed to "Yes". 
 
 ```{r}
 data("NHANES")
@@ -50,6 +50,8 @@ nhanes = NHANES %>%
          select("Age", "Race1", "Education", "HHIncome", "Weight", "Height", "Pulse", "Diabetes", "BMI", "PhysActive", "Smoke100") %>%
          janitor::clean_names() %>%
          na.omit()
+
+nhanes$diabetes = relevel(nhanes$diabetes, ref = "Yes")
 
 skimr::skim(nhanes)
 
@@ -84,23 +86,27 @@ The following three models will be created and compared to generate an optimal m
 
 ### Classification tree 
 
-When creating the classification tree, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and use down-sampling in our control settings, as the outcome of interest, `diabetes` is unbalanced. We then create a sequence of complexity parameters to try. The train model is created using `rpart` and the best tune is then determined. 
+When creating the classification tree, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and use down-sampling in our control settings, as the outcome of interest, `diabetes` is unbalanced. We then create a sequence of complexity parameters to try. The train model is created using the `train` function and `rpart` method. The best tune is then displayed, along with the confusion matrix for this classification tree. 
 
 ```{r}
 set.seed(123)
 
 nhanes_train_control = trainControl(method = "cv", number = 10, sampling = "down")
 
-grid.2 = expand.grid(cp = seq(0.001, 0.3, by = 0.01))
+grid = expand.grid(cp = seq(0.001, 0.3, by = 0.01))
 
-tree_diabetes = train(diabetes~., data = nhanes_train, method = "rpart", trControl = nhanes_train_control, tuneGrid = grid.2)
+tree_diabetes = train(diabetes~., 
+                      data = nhanes_train, 
+                      method = "rpart", 
+                      trControl = nhanes_train_control, 
+                      tuneGrid = grid)
 
 tree_diabetes$bestTune
 
 confusionMatrix(tree_diabetes)
 ```
 
-The accuracy value for the best tune from the training dataset is 0.7045 with a cp value of 0.001
+The accuracy value for the classification tree model from the training data set is 0.718 with a cp value of 0.001
 
 The classification tree from the training data is displayed below using the selected hyperparameters and the function `rpart.plot`. 
 
@@ -110,13 +116,20 @@ rpart.plot(tree_diabetes$finalModel)
 
 ### Support vector classifier 
 
-When creating the support vector classifier, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and specify that `classProbs = T` to specify that we want the ability to calculate the probabilities for the training portion. Because support vector classifier goes based on distance, we center and scale the data. 
+When creating the support vector classifier, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and specify that `classProbs = T` to specify that we want the ability to calculate the probabilities for the training portion. Because support vector classifier goes based on distance, we center and scale the data within the `train` function. The final model is displayed, along with the confusion matrix for this support vector classifier. 
+
+
 ```{r}
 set.seed(123)
 
 nhanes_train_control_svm = trainControl(method = "cv", number = 10, classProbs = T)
 
-svm_caret = train(diabetes ~., data = nhanes_train, method = "svmLinear", trControl = nhanes_train_control_svm, preProcess = c("center", "scale"))
+svm_caret = train(diabetes ~., 
+                  data = nhanes_train, 
+                  method = "svmLinear", 
+                  trControl = nhanes_train_control_svm, 
+                  preProcess = c("center", "scale"),
+                  tuneGrid = expand.grid(C = seq(0.001, 2, length = 30)))
 
 
 svm_caret$finalModel
@@ -124,16 +137,55 @@ svm_caret$finalModel
 confusionMatrix(svm_caret)
 ```
 
+The accuracy value for the support vector classifier model from the training data set is 0.8962 and the C value is 0.001. 
 
+### Logistic regression 
 
+When conducting a logistic regression model, the training data set is fed into the `train` function with the specified method of `glm`. We specify a 10-fold cross validation and center and scale the data. The final model is displayed, along with the confusion matrix for this logistic regression model. 
 
+```{r}
+set.seed(123)
+nhanes_train_lr = train(diabetes ~., 
+                        data = nhanes_train,
+                        method = "glm",
+                        trControl = trainControl("cv", number = 10),
+                        preProcess = c("center", "scale"))
 
+nhanes_train_lr$results
 
+confusionMatrix(nhanes_train_lr)
+```
 
+The accuracy value for the logistic regression model from the training data set is 0.8953. 
 
+### Comparing models
 
+The following accuracy values were obtained from the training data set for the three models:
 
+* Classification Tree: 0.718
+* Support Vector Classifier: 0.8962
+* Logistic Regression: 0.8953
 
+Since the support vector classifier model resulted in the highest accuracy value among the three prediction models, we can conclude that the support vector classifier is the optimal model. 
 
+## Part 2: The optimal model - support vector classifier 
+
+The support vector classifier model is used to feed into the testing data sett through the `predict` function and the final evaluation metrics are determined through generating a confusion matrix.
+
+```{r}
+set.seed(123)
+
+svm_pred_test = predict(svm_caret, nhanes_test)
+
+confusionMatrix(svm_pred_test, nhanes_test$diabetes)
+```
+
+The confusion matrix reports an accuracy of 0.8966 (95% CI: 0.9921, 0.91) and a kappa value of 0. The model's Mcnemar's test p-value is < 2e-16 with a sensitivity of 0.0000 and a specificity of 1.0000. The reported PPV is 0.8966 and the prevalence is 0.1034.
+
+## Part 3: Limitations and considerations
+
+One major limitation to support vector classifier models is that it is not suitable for large data sets. SVM underperforms in cases where the number of features for each data point exceeds the number of training data samples. This also results in a large amount of time to train the datasets itself. 
+
+Another major limitation is that the support vector classifier model is much more difficult to understand and interpret in comparison to classification and decision trees. 
 
 

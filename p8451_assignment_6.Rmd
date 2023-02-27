@@ -1,0 +1,139 @@
+---
+title: "p8451_assignment_6"
+output: html_document
+date: "2023-02-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 0: Data Cleaning
+
+### Loading packages and preparing dataset
+
+To proceed with the problem set, the following libraries will be used in addition to base R
+```{r}
+library(tidyverse)
+library(rpart)
+library(caret)
+library(rpart.plot)
+library(pROC)
+library(dplyr)
+library(NHANES)
+library(e1071)
+
+set.seed(123)
+```
+
+
+The NHANES dataset from 1999-2004 is first imported and restricted to the list of 11 variables below: 
+
+* Age
+* Race1
+* Education
+* HHIncome
+* Weight
+* Height
+* Pulse
+* Diabetes
+* BMI
+* Phys Active
+* Smoke100
+
+The data set is then cleaned using the `clean_names` function and summarised using the `skim` function. Missing variables were omitted using the `na.omit` function.
+
+```{r}
+data("NHANES")
+
+nhanes = NHANES %>%
+         select("Age", "Race1", "Education", "HHIncome", "Weight", "Height", "Pulse", "Diabetes", "BMI", "PhysActive", "Smoke100") %>%
+         janitor::clean_names() %>%
+         na.omit()
+
+skimr::skim(nhanes)
+
+summary(nhanes$diabetes)
+```
+
+The data set is comprised of 6,356 observations of 11 variables, 5 of which are numeric (`age`, `weight`, `height`, `pulse`, and `bmi`) and 6 of which are factor variables (`race1`, `education`, `hh_income`, `diabetes`, `phys_active`, and `smoke100`). 
+
+A summary of our outcome of interest, `diabetes`, shows that the data is slightly unbalanced, with 5,697 observations of no diabetes and 659 observations of having diabetes. 
+
+## Creating balanced partitions in the datta 
+
+The data is then partitioned into training and testing data sets using a 70/30 split through the function `createDataPartition`. The training and testing data set is generated with an equal proportion of individuals with the outcome of interest, `diabetes`. 
+
+```{r}
+set.seed(123)
+
+train_indices = 
+  createDataPartition(y = nhanes$diabetes, p = 0.7, list = FALSE)
+
+nhanes_train = nhanes[train_indices,]
+nhanes_test = nhanes[-train_indices,]
+```
+
+## Part 1: Creating and comparing three different models 
+
+The following three models will be created and compared to generate an optimal model for predicting diabetes:
+
+* Classification tree
+* Support vector classifier
+* Logistic regression 
+
+### Classification tree 
+
+When creating the classification tree, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and use down-sampling in our control settings, as the outcome of interest, `diabetes` is unbalanced. We then create a sequence of complexity parameters to try. The train model is created using `rpart` and the best tune is then determined. 
+
+```{r}
+set.seed(123)
+
+nhanes_train_control = trainControl(method = "cv", number = 10, sampling = "down")
+
+grid.2 = expand.grid(cp = seq(0.001, 0.3, by = 0.01))
+
+tree_diabetes = train(diabetes~., data = nhanes_train, method = "rpart", trControl = nhanes_train_control, tuneGrid = grid.2)
+
+tree_diabetes$bestTune
+
+confusionMatrix(tree_diabetes)
+```
+
+The accuracy value for the best tune from the training dataset is 0.7045 with a cp value of 0.001
+
+The classification tree from the training data is displayed below using the selected hyperparameters and the function `rpart.plot`. 
+
+```{r}
+rpart.plot(tree_diabetes$finalModel)
+```
+
+### Support vector classifier 
+
+When creating the support vector classifier, we first create our control settings using `trainControl`. We specify a 10-fold cross-validation and specify that `classProbs = T` to specify that we want the ability to calculate the probabilities for the training portion. Because support vector classifier goes based on distance, we center and scale the data. 
+```{r}
+set.seed(123)
+
+nhanes_train_control_svm = trainControl(method = "cv", number = 10, classProbs = T)
+
+svm_caret = train(diabetes ~., data = nhanes_train, method = "svmLinear", trControl = nhanes_train_control_svm, preProcess = c("center", "scale"))
+
+
+svm_caret$finalModel
+
+confusionMatrix(svm_caret)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
